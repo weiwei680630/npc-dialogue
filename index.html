@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NPC 對話編輯器</title>
+<style>
+  :root {
+    --bg: #1b1b1f;
+    --panel: #2a2a2e;
+    --panel-2: #34343a;
+    --line: #000;
+    --text: #ececec;
+    --muted: #a3a3a8;
+    --accent: #5aa83a;
+    --accent-dark: #3d7a24;
+    --danger: #c94a3f;
+    --warn: #e6b422;
+    --mc-btn: #6f6f6f;
+    --mc-btn-hover: #7a86b8;
+    --mc-dialog: rgba(16, 16, 16, 0.92);
+    --input-bg: #1f1f23;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    background-image: radial-gradient(circle at 20% 0%, #26302a 0, transparent 50%);
+    color: var(--text);
+    font-family: "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    padding: 16px;
+  }
+  h1, h2, h3 { margin: 0; font-weight: 700; }
+  h2 { font-size: 16px; }
+  h3 { font-size: 15px; }
+
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    flex-wrap: wrap; margin-bottom: 12px;
+  }
+  .topbar h1 { font-size: 22px; letter-spacing: 1px; text-shadow: 2px 2px 0 #000; }
+  .topbar h1 small { font-size: 13px; color: var(--muted); font-weight: 400; text-shadow: none; margin-left: 8px; }
+  .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .panel {
+    background: var(--panel);
+    border: 2px solid var(--line);
+    box-shadow: inset 2px 2px 0 #444, inset -2px -2px 0 #1a1a1a;
+    padding: 14px;
+    margin-bottom: 12px;
+    min-width: 0;
+  }
+  .panel > h2 { margin-bottom: 10px; }
+
+  /* Minecraft-style buttons */
+  button {
+    font: inherit; color: #fff; cursor: pointer;
+    background: var(--mc-btn);
+    border: 2px solid #000;
+    box-shadow: inset 2px 2px 0 #9a9a9a, inset -2px -2px 0 #4a4a4a;
+    padding: 5px 12px;
+    text-shadow: 1px 1px 0 #333;
+  }
+  button:hover:not(:disabled) { background: var(--mc-btn-hover); box-shadow: inset 2px 2px 0 #a8b2dc, inset -2px -2px 0 #4c5583; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); box-shadow: inset 2px 2px 0 #84cc63, inset -2px -2px 0 var(--accent-dark); }
+  button.primary:hover { background: #67bd44; }
+  button.danger { background: var(--danger); box-shadow: inset 2px 2px 0 #e4776d, inset -2px -2px 0 #8a2e27; }
+  button.small { padding: 1px 8px; font-size: 13px; }
+  button.big { width: 100%; padding: 12px; font-size: 17px; margin-top: 14px; }
+
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  label code { color: #9fd38a; font-family: var(--mono); font-size: 12px; }
+  input, select, textarea {
+    display: block; width: 100%; margin-top: 4px;
+    font: inherit; font-size: 15px; color: var(--text);
+    background: var(--input-bg);
+    border: 2px solid #000;
+    box-shadow: inset 0 0 0 1px #4a4a4f;
+    padding: 6px 8px;
+  }
+  textarea { resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: none; box-shadow: inset 0 0 0 1px var(--accent); }
+  .mono { font-family: var(--mono); font-size: 13px; }
+  .invalid { box-shadow: inset 0 0 0 2px var(--danger) !important; }
+
+  .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0 12px; }
+  .meta { font-size: 12px; color: var(--muted); }
+  .meta code { font-family: var(--mono); }
+
+  details.help summary { cursor: pointer; font-weight: 700; }
+  details.help ol { margin: 10px 0 0; padding-left: 22px; }
+  details.help li { margin-bottom: 6px; }
+  details.help code { font-family: var(--mono); background: #111; padding: 1px 6px; color: #9fd38a; }
+
+  /* Layout */
+  .layout { display: grid; grid-template-columns: 240px minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+  .layout > * { margin-bottom: 0; }
+  .right > .panel:last-child { margin-bottom: 0; }
+
+  /* Scene list */
+  #sceneList { list-style: none; margin: 0 0 10px; padding: 0; }
+  .scene-item {
+    background: var(--panel-2); border: 2px solid #000; margin-bottom: 6px; padding: 6px 8px; cursor: pointer;
+  }
+  .scene-item:hover { background: #3e3e45; }
+  .scene-item.active { background: #33452b; box-shadow: inset 0 0 0 2px var(--accent); }
+  .scene-item.has-issue .tag::after { content: " ⚠"; color: var(--warn); }
+  .scene-item .tag { font-family: var(--mono); font-size: 13px; color: #9fd38a; word-break: break-all; }
+  .scene-item .snip { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .scene-item .tools { display: flex; gap: 4px; margin-top: 4px; }
+  .scene-item .tools button { padding: 0 6px; font-size: 12px; }
+  .scene-num { display: inline-block; min-width: 22px; color: var(--muted); font-size: 12px; }
+  #btnAddScene { width: 100%; }
+
+  /* Editor */
+  .editor-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .badge { background: var(--accent); color: #fff; padding: 1px 8px; border: 2px solid #000; font-size: 13px; text-shadow: 1px 1px 0 #333; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+  .btns-head { display: flex; align-items: center; justify-content: space-between; margin: 6px 0 8px; gap: 8px; }
+  .btn-card { background: var(--panel-2); border: 2px solid #000; padding: 10px; margin-bottom: 8px; }
+  .btn-card .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .btn-card .card-top .num { font-weight: 700; font-size: 13px; }
+  .btn-card .card-tools { display: flex; gap: 4px; }
+  .btn-card label:last-of-type { margin-bottom: 4px; }
+  .gen-cmd { font-family: var(--mono); font-size: 12px; color: #9fd38a; word-break: break-all; }
+  .empty-note { color: var(--muted); font-size: 13px; padding: 8px 0; }
+
+  /* Minecraft dialogue preview */
+  .mc-dialog { background: var(--mc-dialog); border: 2px solid #000; box-shadow: inset 0 0 0 2px #5a5a5a; }
+  .mc-title { background: #3a3a3a; border-bottom: 2px solid #000; padding: 6px 10px; font-weight: 700; text-shadow: 2px 2px 0 #000; display: flex; justify-content: space-between; }
+  .mc-body { display: flex; gap: 12px; padding: 12px; min-height: 110px; }
+  .mc-npc { flex: 0 0 64px; }
+  .mc-npc svg { width: 64px; height: 64px; image-rendering: pixelated; border: 2px solid #000; display: block; }
+  .mc-text { white-space: pre-wrap; word-break: break-word; text-shadow: 1px 1px 0 #000; flex: 1; min-width: 0; }
+  .mc-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 0 12px 12px; }
+  .mc-buttons button { padding: 8px; }
+  .mc-buttons button.broken { background: #6b3a36; }
+  .mc-closed { text-align: center; padding: 30px 10px; color: var(--muted); background: #111; border: 2px solid #000; }
+  .mc-closed button { margin-top: 10px; }
+  .preview-tools { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  #previewLog { margin-top: 8px; background: #111; border: 2px solid #000; padding: 6px 8px; font-family: var(--mono); font-size: 12px; max-height: 130px; overflow: auto; color: #cfcfcf; min-height: 40px; }
+  #previewLog div { white-space: pre-wrap; word-break: break-all; }
+  #previewLog .sys { color: var(--muted); }
+
+  #issues { margin: 0; padding-left: 20px; font-size: 13px; }
+  #issues li { color: var(--warn); cursor: pointer; margin-bottom: 2px; }
+  #issues li.ok { color: #8fd36f; list-style: none; margin-left: -20px; cursor: default; }
+
+  .tabs { display: flex; gap: 4px; margin: 12px 0 0; }
+  .tabs button { padding: 3px 10px; font-size: 13px; }
+  .tabs button.on { background: #444; box-shadow: inset 0 0 0 2px var(--accent); }
+  #jsonOut { margin: 0; background: #111; border: 2px solid #000; border-top: none; padding: 8px; font-family: var(--mono); font-size: 12px; max-height: 360px; overflow: auto; white-space: pre; color: #d6d6d6; }
+  .export-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%) translateY(80px);
+    background: #222; border: 2px solid #000; box-shadow: inset 0 0 0 2px var(--accent);
+    padding: 8px 16px; transition: transform .2s; z-index: 10; max-width: calc(100% - 32px);
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 1150px) {
+    .layout { grid-template-columns: 220px minmax(0, 1fr); }
+    .right { grid-column: 1 / -1; }
+  }
+  @media (max-width: 720px) {
+    body { padding: 16px; }
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .field-row { grid-template-columns: 1fr; }
+    .mc-buttons { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <h1>⛏ NPC 對話編輯器<small>Minecraft Education · npc_dialogue</small></h1>
+  <div class="row-actions">
+    <button id="btnExample">載入範例</button>
+    <button id="btnClear" class="danger">清除全部</button>
+  </div>
+</header>
+
+<section class="panel">
+  <h2>行為包設定</h2>
+  <div class="settings-grid">
+    <label>包名稱 <code>name</code><input data-pack="name"></label>
+    <label>描述 <code>description</code><input data-pack="description"></label>
+    <label>對話檔名 <code>dialogue/*.json</code><input data-pack="fileName" class="mono"></label>
+    <label>預設 NPC 名稱（新頁面自動帶入）<input data-pack="defaultNpc"></label>
+  </div>
+  <div class="meta" id="packMeta"></div>
+</section>
+
+<details class="panel help" open>
+  <summary>📖 使用說明（如何放進 Minecraft）</summary>
+  <ol>
+    <li>在下方編輯每一頁對話。按「＋ 新增下一頁」可建立連續對話，並自動加上「前往下一頁」的按鈕。</li>
+    <li>按鈕動作：<b>前往頁面</b> 會產生 <code>/dialogue open @s @initiator 場景代號</code>；<b>結束對話</b> 會關閉對話框；<b>只執行指令</b> 會執行你填的指令後關閉。</li>
+    <li>完成後按「下載 .mcpack」，雙擊檔案即可匯入 Minecraft Education。</li>
+    <li>建立（或編輯）世界 → 「行為包」中啟用此包，並開啟「作弊」。</li>
+    <li>放置 NPC（<code>/summon npc</code>），站在 NPC 旁邊（3 格內），在聊天欄或指令方塊執行：<br>
+      <code id="bindCmd">/dialogue change @e[type=npc,r=3] scene_start</code><br>
+      <code>@e[type=npc,r=3]</code> 選取你周圍 3 格內的 NPC；最後的 <code id="bindTag">scene_start</code> 是第一頁的場景代號，會自動跟著你的設定變動。<br>
+      綁定後，玩家點 NPC 就會從這一頁開始對話。</li>
+    <li>修改後再次下載，版本號會自動 +1，重新匯入即可覆蓋舊版。</li>
+  </ol>
+</details>
+
+<main class="layout">
+  <aside class="panel">
+    <h2>頁面列表</h2>
+    <ol id="sceneList"></ol>
+    <button id="btnAddScene">＋ 新增空白頁面</button>
+  </aside>
+
+  <section class="panel" id="editor"></section>
+
+  <section class="right">
+    <div class="panel">
+      <h2>遊戲預覽</h2>
+      <div id="preview"></div>
+      <div class="preview-tools">
+        <button class="small" id="pvRestart">⟲ 從第一頁開始</button>
+        <button class="small" id="pvCurrent">▶ 預覽目前編輯頁</button>
+      </div>
+      <div id="previewLog"></div>
+    </div>
+
+    <div class="panel">
+      <h2>檢查</h2>
+      <ul id="issues"></ul>
+    </div>
+
+    <div class="panel">
+      <h2>匯出</h2>
+      <div class="export-row">
+        <button class="primary" id="btnMcpack">⬇ 下載 .mcpack</button>
+        <button id="btnDlDialogue">dialogue.json</button>
+        <button id="btnDlManifest">manifest.json</button>
+        <button id="btnCopy">📋 複製 JSON</button>
+      </div>
+      <div class="tabs">
+        <button data-tab="dialogue" class="on">dialogue</button>
+        <button data-tab="manifest">manifest</button>
+      </div>
+      <pre id="jsonOut"></pre>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  const STORAGE_KEY = 'mc_npc_dialogue_editor_v1';
+  const MAX_BUTTONS = 6;
+  const TAG_RE = /^[A-Za-z0-9_]+$/;
+
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  let state;
+  let previewIdx = 0;
+  let previewEnded = false;
+  let previewLog = [];
+  let jsonTab = 'dialogue';
+  let tagBeforeEdit = null;
+
+  // ---------- helpers ----------
+  function uuid() {
+    try { if (crypto.randomUUID) return crypto.randomUUID(); } catch (e) { /* fall through */ }
+    const b = crypto.getRandomValues(new Uint8Array(16));
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
+
+  const lines = s => String(s).split('\n');
+  const cleanCmds = arr => arr.map(c => c.trim()).filter(Boolean);
+  const snippet = s => (s.text || '').split('\n').find(l => l.trim()) || '（尚無內容）';
+
+  function newPack() {
+    return {
+      name: 'NPC Dialogue Test',
+      description: 'NPC 連續對話測試包',
+      fileName: 'npc_dialogue',
+      defaultNpc: '冒險導師',
+      version: [1, 0, 0],
+      headerUuid: uuid(),
+      moduleUuid: uuid()
+    };
+  }
+  const newButton = (name = '', action = 'goto', target = '', commands = []) => ({ name, action, target, commands });
+  const newScene = (tag, npcName) => ({ tag, npcName, text: '', onOpen: [], buttons: [newButton('再見', 'exit')] });
+
+  function uniqueTag(base) {
+    const tags = new Set(state.scenes.map(s => s.tag));
+    if (!tags.has(base)) return base;
+    let n = 2;
+    while (tags.has(`${base}_${n}`)) n++;
+    return `${base}_${n}`;
+  }
+  function nextSceneTag() {
+    const tags = new Set(state.scenes.map(s => s.tag));
+    let n = state.scenes.length + 1;
+    while (tags.has(`scene_${n}`)) n++;
+    return `scene_${n}`;
+  }
+
+  function exampleState() {
+    const go = (name, target, commands = []) => newButton(name, 'goto', target, commands);
+    const exit = name => newButton(name, 'exit');
+    const npc = '冒險導師';
+    return {
+      pack: newPack(),
+      current: 0,
+      scenes: [
+        { tag: 'scene_start', npcName: npc, onOpen: [],
+          text: '你好，旅行者！在開始冒險之前，我需要問你三個問題。\n\n問題 1：你準備好面對晚上的怪物了嗎？',
+          buttons: [go('準備好了！ (下一題)', 'scene_q2'), go('我還在怕... (重來)', 'scene_start')] },
+        { tag: 'scene_q2', npcName: npc, onOpen: [],
+          text: '很好，勇氣可嘉！\n\n問題 2：你偏好使用哪種武器？',
+          buttons: [go('鑽石劍 (下一題)', 'scene_q3'), go('弓箭 (下一題)', 'scene_q3')] },
+        { tag: 'scene_q3', npcName: npc, onOpen: [],
+          text: '最後一個問題！\n\n問題 3：如果看到苦力怕 (Creeper) 衝過來，你會怎麼做？',
+          buttons: [
+            go('衝上去打！', 'scene_end_brave', ['/say 真是魯莽...不過祝你好運！對話結束。']),
+            go('轉身逃跑！', 'scene_end_smart', ['/say 明智的選擇。祝你好運！對話結束。'])
+          ] },
+        { tag: 'scene_end_brave', npcName: npc, onOpen: ['/give @initiator iron_sword 1'],
+          text: '你是個勇敢的戰士！這是給你的獎勵。', buttons: [exit('再見')] },
+        { tag: 'scene_end_smart', npcName: npc, onOpen: ['/give @initiator shield 1'],
+          text: '你是個謹慎的策士！這是給你的獎勵。', buttons: [exit('再見')] }
+      ]
+    };
+  }
+
+  function blankState() {
+    const pack = newPack();
+    pack.name = '我的 NPC 對話';
+    pack.description = 'NPC 對話行為包';
+    pack.defaultNpc = 'NPC';
+    return { pack, current: 0, scenes: [newScene('scene_start', pack.defaultNpc)] };
+  }
+
+  // ---------- persistence ----------
+  function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+  }
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      if (!s || !s.pack || !Array.isArray(s.scenes) || !s.scenes.length) return null;
+      s.current = Math.min(Math.max(0, s.current | 0), s.scenes.length - 1);
+      return s;
+    } catch (e) { return null; }
+  }
+
+  // ---------- JSON build ----------
+  const dialogueOpenCmd = tag => `/dialogue open @s @initiator ${tag}`;
+
+  function buildButton(b) {
+    const out = { name: b.name };
+    const cmds = cleanCmds(b.commands);
+    if (b.action === 'goto' && b.target) cmds.push(dialogueOpenCmd(b.target));
+    if (b.action === 'exit') {
+      if (cmds.length) out.commands = cmds;
+      out.on_exit = true;
+    } else {
+      out.commands = cmds;
+    }
+    return out;
+  }
+  function buildScene(s) {
+    const out = { scene_tag: s.tag, npc_name: s.npcName, text: s.text };
+    const onOpen = cleanCmds(s.onOpen);
+    if (onOpen.length) out.on_open_commands = onOpen;
+    out.buttons = s.buttons.map(buildButton);
+    return out;
+  }
+  const buildDialogue = () => ({
+    format_version: '1.17',
+    'minecraft:npc_dialogue': { scenes: state.scenes.map(buildScene) }
+  });
+  const buildManifest = () => ({
+    format_version: 2,
+    header: {
+      description: state.pack.description,
+      name: state.pack.name,
+      uuid: state.pack.headerUuid,
+      version: [...state.pack.version],
+      min_engine_version: [1, 17, 0]
+    },
+    modules: [{
+      description: 'Dialogue Data',
+      type: 'data',
+      uuid: state.pack.moduleUuid,
+      version: [...state.pack.version]
+    }]
+  });
+  const fileBase = () => (state.pack.fileName || 'npc_dialogue').trim().replace(/[^A-Za-z0-9_\-]/g, '_') || 'npc_dialogue';
+  const packFileName = () => ((state.pack.name || 'npc_dialogue').trim().replace(/[\\/:*?"<>|]/g, '_') || 'npc_dialogue');
+  const pretty = obj => JSON.stringify(obj, null, 2);
+
+  // ---------- validation ----------
+  function validate() {
+    const issues = [];
+    const tags = state.scenes.map(s => s.tag);
+    state.scenes.forEach((s, i) => {
+      const where = `第 ${i + 1} 頁${s.tag ? `（${s.tag}）` : ''}`;
+      if (!s.tag) issues.push({ i, key: 'tag', msg: `${where}：缺少場景代號` });
+      else if (!TAG_RE.test(s.tag)) issues.push({ i, key: 'tag', msg: `${where}：場景代號只能用英文、數字、底線` });
+      else if (tags.indexOf(s.tag) !== i) issues.push({ i, key: 'tag', msg: `${where}：場景代號與其他頁重複` });
+      if (!s.text.trim()) issues.push({ i, key: 'text', msg: `${where}：對話內容是空的` });
+      s.buttons.forEach((b, j) => {
+        if (!b.name.trim()) issues.push({ i, key: `b${j}name`, msg: `${where} 按鈕 ${j + 1}：沒有按鈕文字` });
+        if (b.action === 'goto') {
+          if (!b.target) issues.push({ i, key: `b${j}target`, msg: `${where} 按鈕 ${j + 1}：尚未選擇前往的頁面` });
+          else if (!tags.includes(b.target)) issues.push({ i, key: `b${j}target`, msg: `${where} 按鈕 ${j + 1}：前往的頁面「${b.target}」不存在` });
+        }
+        if (b.action === 'cmd' && !cleanCmds(b.commands).length) issues.push({ i, key: `b${j}name`, msg: `${where} 按鈕 ${j + 1}：選了「只執行指令」但沒有填指令` });
+      });
+    });
+    return issues;
+  }
+
+  // ---------- rendering ----------
+  function renderPack() {
+    $$('[data-pack]').forEach(el => {
+      if (document.activeElement !== el) el.value = state.pack[el.dataset.pack] ?? '';
+    });
+    $('#packMeta').innerHTML =
+      `版本 <code>${state.pack.version.join('.')}</code>（每次下載 .mcpack 後自動 +1）· ` +
+      `header uuid（每次下載前重新產生） <code>${esc(state.pack.headerUuid)}</code>`;
+    const first = state.scenes[0];
+    const firstTag = first && first.tag ? first.tag : 'scene_start';
+    $('#bindCmd').textContent = `/dialogue change @e[type=npc,r=3] ${firstTag}`;
+    $('#bindTag').textContent = firstTag;
+  }
+
+  function renderSidebar(issues) {
+    const bad = new Set(issues.map(x => x.i));
+    $('#sceneList').innerHTML = state.scenes.map((s, i) => `
+      <li class="scene-item${i === state.current ? ' active' : ''}${bad.has(i) ? ' has-issue' : ''}" data-si="${i}">
+        <div><span class="scene-num">${i + 1}.</span><span class="tag">${esc(s.tag || '（未命名）')}</span></div>
+        <div class="snip">${esc(snippet(s))}</div>
+        <div class="tools">
+          <button data-sact="up" title="上移" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button data-sact="down" title="下移" ${i === state.scenes.length - 1 ? 'disabled' : ''}>↓</button>
+          <button data-sact="dup" title="複製這一頁">⧉</button>
+          <button data-sact="del" title="刪除這一頁" ${state.scenes.length <= 1 ? 'disabled' : ''}>✕</button>
+        </div>
+      </li>`).join('');
+  }
+
+  function targetOptions(b) {
+    const tags = state.scenes.map(s => s.tag);
+    let html = `<option value="">— 請選擇頁面 —</option>`;
+    state.scenes.forEach((s, i) => {
+      if (!s.tag) return;
+      const snip = snippet(s);
+      html += `<option value="${esc(s.tag)}"${s.tag === b.target ? ' selected' : ''}>${i + 1}. ${esc(s.tag)} — ${esc(snip.slice(0, 16))}</option>`;
+    });
+    if (b.target && !tags.includes(b.target)) {
+      html += `<option value="${esc(b.target)}" selected>⚠ ${esc(b.target)}（不存在）</option>`;
+    }
+    return html;
+  }
+
+  function genCmdText(b) {
+    const cmds = cleanCmds(b.commands);
+    if (b.action === 'goto' && b.target) cmds.push(dialogueOpenCmd(b.target));
+    if (b.action === 'exit') cmds.push('（關閉對話 on_exit）');
+    return cmds.length ? '→ ' + cmds.join('\n→ ') : '→ （沒有指令）';
+  }
+
+  function renderEditor() {
+    const s = state.scenes[state.current];
+    const full = s.buttons.length >= MAX_BUTTONS;
+    $('#editor').innerHTML = `
+      <div class="editor-head"><span class="badge">第 ${state.current + 1} 頁</span><h2>編輯對話</h2></div>
+      <div class="field-row">
+        <label>場景代號 <code>scene_tag</code>
+          <input data-field="tag" data-vkey="tag" class="mono" value="${esc(s.tag)}" placeholder="例如 scene_start" spellcheck="false">
+        </label>
+        <label>NPC 名稱 <code>npc_name</code>
+          <input data-field="npcName" value="${esc(s.npcName)}">
+        </label>
+      </div>
+      <label>對話內容 <code>text</code>（可換行）
+        <textarea data-field="text" data-vkey="text" rows="6" placeholder="NPC 要說的話…">${esc(s.text)}</textarea>
+      </label>
+      <label>開啟此頁時執行的指令 <code>on_open_commands</code>（選填，一行一個）
+        <textarea data-field="onOpen" class="mono" rows="2" placeholder="/give @initiator shield 1" spellcheck="false">${esc(s.onOpen.join('\n'))}</textarea>
+      </label>
+
+      <div class="btns-head">
+        <h3>按鈕選單（${s.buttons.length}/${MAX_BUTTONS}）</h3>
+        <button class="small" data-act="add-btn" ${full ? 'disabled' : ''}>＋ 新增按鈕</button>
+      </div>
+      <div class="btn-list">
+        ${s.buttons.length ? s.buttons.map((b, j) => `
+          <div class="btn-card" data-bi="${j}">
+            <div class="card-top">
+              <span class="num">按鈕 ${j + 1}</span>
+              <div class="card-tools">
+                <button class="small" data-act="btn-up" title="上移" ${j === 0 ? 'disabled' : ''}>↑</button>
+                <button class="small" data-act="btn-down" title="下移" ${j === s.buttons.length - 1 ? 'disabled' : ''}>↓</button>
+                <button class="small danger" data-act="btn-del" title="刪除按鈕">✕</button>
+              </div>
+            </div>
+            <div class="field-row">
+              <label>按鈕文字 <code>name</code>
+                <input data-bf="name" data-vkey="b${j}name" value="${esc(b.name)}">
+              </label>
+              <label>按下後
+                <select data-bf="action">
+                  <option value="goto"${b.action === 'goto' ? ' selected' : ''}>➜ 前往頁面</option>
+                  <option value="exit"${b.action === 'exit' ? ' selected' : ''}>✖ 結束對話</option>
+                  <option value="cmd"${b.action === 'cmd' ? ' selected' : ''}>⚙ 只執行指令</option>
+                </select>
+              </label>
+            </div>
+            ${b.action === 'goto' ? `
+              <label>前往頁面
+                <select data-bf="target" data-vkey="b${j}target">${targetOptions(b)}</select>
+              </label>` : ''}
+            <label>${b.action === 'cmd' ? '要執行的指令' : '額外指令（選填）'}，一行一個
+              <textarea data-bf="commands" class="mono" rows="2" placeholder="/say 你好！" spellcheck="false">${esc(b.commands.join('\n'))}</textarea>
+            </label>
+            <div class="gen-cmd" data-gen>${esc(genCmdText(b)).replace(/\n/g, '<br>')}</div>
+          </div>`).join('') : `<div class="empty-note">這一頁沒有按鈕，玩家只能按右上角 ✕ 關閉對話。</div>`}
+      </div>
+      <button class="big primary" data-act="add-next">＋ 新增下一頁</button>
+    `;
+  }
+
+  function refreshTargetSelects() {
+    const s = state.scenes[state.current];
+    $$('#editor select[data-bf="target"]').forEach(sel => {
+      const j = +sel.closest('.btn-card').dataset.bi;
+      sel.innerHTML = targetOptions(s.buttons[j]);
+    });
+    $$('#editor .btn-card').forEach(card => {
+      const b = s.buttons[+card.dataset.bi];
+      $('[data-gen]', card).innerHTML = esc(genCmdText(b)).replace(/\n/g, '<br>');
+    });
+  }
+
+  function markInvalid(issues) {
+    const keys = new Set(issues.filter(x => x.i === state.current).map(x => x.key));
+    $$('#editor [data-vkey]').forEach(el => el.classList.toggle('invalid', keys.has(el.dataset.vkey)));
+  }
+
+  function renderIssues(issues) {
+    $('#issues').innerHTML = issues.length
+      ? issues.map(x => `<li data-goto="${x.i}">${esc(x.msg)}</li>`).join('')
+      : `<li class="ok">✔ 沒有問題，可以匯出！</li>`;
+  }
+
+  const NPC_SVG = (() => {
+    // 8x8 pixel face
+    const px = [
+      'HHHHHHHH',
+      'HHHHHHHH',
+      'HSSSSSSH',
+      'SSSSSSSS',
+      'SWBSSBWS',
+      'SSSNNSSS',
+      'SSMMMMSS',
+      'SSMSSMSS'
+    ];
+    const col = { H: '#3b2a1a', S: '#c69c7a', W: '#ffffff', B: '#4a5fb5', N: '#9a6e52', M: '#6b3d2a' };
+    let rects = '';
+    px.forEach((row, y) => [...row].forEach((c, x) => { rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="${col[c]}"/>`; }));
+    return `<svg viewBox="0 0 8 8" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">${rects}</svg>`;
+  })();
+
+  function renderPreview() {
+    const box = $('#preview');
+    const tags = state.scenes.map(s => s.tag);
+    if (previewEnded) {
+      box.innerHTML = `<div class="mc-closed">對話已關閉<br><button data-pv="restart">⟲ 重新開始</button></div>`;
+    } else {
+      if (previewIdx >= state.scenes.length) previewIdx = 0;
+      const s = state.scenes[previewIdx];
+      box.innerHTML = `
+        <div class="mc-dialog">
+          <div class="mc-title"><span>${esc(s.npcName || 'NPC')}</span><span class="meta">${esc(s.tag)}</span></div>
+          <div class="mc-body">
+            <div class="mc-npc" aria-hidden="true">${NPC_SVG}</div>
+            <div class="mc-text">${esc(s.text) || '<span class="meta">（尚無對話內容）</span>'}</div>
+          </div>
+          ${s.buttons.length ? `<div class="mc-buttons">${s.buttons.map((b, j) => {
+            const broken = b.action === 'goto' && !tags.includes(b.target);
+            return `<button class="${broken ? 'broken' : ''}" data-pvb="${j}">${esc(b.name || '（未命名）')}</button>`;
+          }).join('')}</div>` : ''}
+        </div>`;
+    }
+    $('#previewLog').innerHTML = previewLog.length
+      ? previewLog.map(l => `<div class="${l.sys ? 'sys' : ''}">${esc(l.text)}</div>`).join('')
+      : `<div class="sys">點擊預覽中的按鈕來測試對話流程，執行的指令會顯示在這裡。</div>`;
+    const log = $('#previewLog');
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function renderJson() {
+    $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === jsonTab));
+    $('#jsonOut').textContent = pretty(jsonTab === 'dialogue' ? buildDialogue() : buildManifest());
+  }
+
+  // light refresh: keeps editor DOM (and focus) intact
+  function refresh() {
+    const issues = validate();
+    renderSidebar(issues);
+    renderIssues(issues);
+    markInvalid(issues);
+    renderPreview();
+    renderJson();
+    renderPack();
+    save();
+  }
+  function renderAll() {
+    renderEditor();
+    refresh();
+  }
+
+  // ---------- preview logic ----------
+  function addLog(text, sys = false) {
+    previewLog.push({ text, sys });
+    if (previewLog.length > 60) previewLog.splice(0, previewLog.length - 60);
+  }
+  function openPreview(idx, quiet = false) {
+    previewIdx = idx;
+    previewEnded = false;
+    const s = state.scenes[idx];
+    if (!quiet && s) {
+      addLog(`▶ 開啟 ${s.tag}`, true);
+      cleanCmds(s.onOpen).forEach(c => addLog(c));
+    }
+  }
+  function pressPreviewButton(j) {
+    const s = state.scenes[previewIdx];
+    const b = s && s.buttons[j];
+    if (!b) return;
+    addLog(`[按下]「${b.name}」`, true);
+    cleanCmds(b.commands).forEach(c => addLog(c));
+    if (b.action === 'goto') {
+      addLog(dialogueOpenCmd(b.target || '?'));
+      const idx = state.scenes.findIndex(x => x.tag === b.target);
+      if (idx < 0) { addLog(`⚠ 找不到頁面「${b.target || '（未選擇）'}」，對話關閉`, true); previewEnded = true; }
+      else openPreview(idx);
+    } else {
+      addLog('■ 對話關閉', true);
+      previewEnded = true;
+    }
+    renderPreview();
+  }
+
+  // ---------- scene operations ----------
+  function selectScene(i) {
+    state.current = i;
+    openPreview(i, true);
+    renderAll();
+  }
+  function moveScene(i, d) {
+    const j = i + d;
+    if (j < 0 || j >= state.scenes.length) return;
+    [state.scenes[i], state.scenes[j]] = [state.scenes[j], state.scenes[i]];
+    if (state.current === i) state.current = j; else if (state.current === j) state.current = i;
+    renderAll();
+  }
+  function dupScene(i) {
+    const copy = JSON.parse(JSON.stringify(state.scenes[i]));
+    copy.tag = uniqueTag((copy.tag || 'scene') + '_copy');
+    state.scenes.splice(i + 1, 0, copy);
+    state.current = i + 1;
+    openPreview(state.current, true);
+    renderAll();
+    toast(`已複製為 ${copy.tag}`);
+  }
+  function deleteScene(i) {
+    if (state.scenes.length <= 1) return;
+    const s = state.scenes[i];
+    if (!confirm(`確定要刪除第 ${i + 1} 頁「${s.tag}」嗎？\n指向這一頁的按鈕會變成失效（會在檢查區提示）。`)) return;
+    state.scenes.splice(i, 1);
+    if (state.current >= state.scenes.length || state.current > i) state.current = Math.max(0, state.current - 1);
+    if (previewIdx >= state.scenes.length) previewIdx = 0;
+    renderAll();
+  }
+  function addBlankScene() {
+    state.scenes.push(newScene(nextSceneTag(), state.pack.defaultNpc));
+    state.current = state.scenes.length - 1;
+    openPreview(state.current, true);
+    renderAll();
+    focusText();
+  }
+  function addNextScene() {
+    const cur = state.scenes[state.current];
+    const tag = nextSceneTag();
+    state.scenes.splice(state.current + 1, 0, newScene(tag, cur.npcName || state.pack.defaultNpc));
+    // link current page to the new one if it has no "goto" button yet
+    if (!cur.buttons.some(b => b.action === 'goto')) {
+      const onlyDefaultExit = cur.buttons.length === 1 && cur.buttons[0].action === 'exit'
+        && cur.buttons[0].name === '再見' && !cleanCmds(cur.buttons[0].commands).length;
+      if (onlyDefaultExit) cur.buttons[0] = newButton('下一頁 ▶', 'goto', tag);
+      else if (cur.buttons.length < MAX_BUTTONS) cur.buttons.unshift(newButton('下一頁 ▶', 'goto', tag));
+    }
+    state.current += 1;
+    openPreview(state.current, true);
+    renderAll();
+    focusText();
+    toast(`已新增 ${tag}，並連結到上一頁`);
+  }
+  function focusText() {
+    const t = $('#editor textarea[data-field="text"]');
+    if (t) t.focus();
+  }
+
+  // ---------- zip / download ----------
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(u8) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+  // Minimal ZIP writer (STORE, no compression, UTF-8 names)
+  function makeZip(files) {
+    const enc = new TextEncoder();
+    const parts = [], central = [];
+    let offset = 0;
+    const d = new Date();
+    const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+    const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+    for (const f of files) {
+      const name = enc.encode(f.name);
+      const data = typeof f.data === 'string' ? enc.encode(f.data) : f.data;
+      const crc = crc32(data);
+      const lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0, 0x04034b50, true);
+      lh.setUint16(4, 20, true);
+      lh.setUint16(6, 0x0800, true);
+      lh.setUint16(8, 0, true);
+      lh.setUint16(10, time, true);
+      lh.setUint16(12, date, true);
+      lh.setUint32(14, crc, true);
+      lh.setUint32(18, data.length, true);
+      lh.setUint32(22, data.length, true);
+      lh.setUint16(26, name.length, true);
+      lh.setUint16(28, 0, true);
+      parts.push(new Uint8Array(lh.buffer), name, data);
+
+      const ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0, 0x02014b50, true);
+      ch.setUint16(4, 20, true);
+      ch.setUint16(6, 20, true);
+      ch.setUint16(8, 0x0800, true);
+      ch.setUint16(10, 0, true);
+      ch.setUint16(12, time, true);
+      ch.setUint16(14, date, true);
+      ch.setUint32(16, crc, true);
+      ch.setUint32(20, data.length, true);
+      ch.setUint32(24, data.length, true);
+      ch.setUint16(28, name.length, true);
+      ch.setUint32(42, offset, true);
+      central.push(new Uint8Array(ch.buffer), name);
+
+      offset += 30 + name.length + data.length;
+    }
+    const cdSize = central.reduce((a, b) => a + b.length, 0);
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true);
+    end.setUint16(8, files.length, true);
+    end.setUint16(10, files.length, true);
+    end.setUint32(12, cdSize, true);
+    end.setUint32(16, offset, true);
+    return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
+  }
+
+  function download(blob, filename) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+  }
+  const jsonBlob = obj => new Blob([pretty(obj)], { type: 'application/json' });
+
+  function confirmIssues() {
+    const n = validate().length;
+    return n === 0 || confirm(`目前有 ${n} 個問題（見「檢查」區），仍要匯出嗎？`);
+  }
+
+  function exportMcpack() {
+    if (!confirmIssues()) return;
+    state.pack.headerUuid = uuid();
+    state.pack.moduleUuid = uuid();
+    const ver = state.pack.version.join('.');
+    const blob = makeZip([
+      { name: 'manifest.json', data: pretty(buildManifest()) },
+      { name: `dialogue/${fileBase()}.json`, data: pretty(buildDialogue()) }
+    ]);
+    download(blob, `${packFileName()}.mcpack`);
+    state.pack.version[2] += 1;
+    refresh();
+    toast(`已下載 ${packFileName()}.mcpack（版本 ${ver}）`);
+  }
+
+  async function copyJson() {
+    const text = $('#jsonOut').textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e2) { /* ignore */ }
+      ta.remove();
+    }
+    toast(`已複製 ${jsonTab}.json 內容`);
+  }
+
+  let toastTimer;
+  function toast(msg) {
+    const t = $('#toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  // ---------- events ----------
+  function bind() {
+    // pack settings
+    $$('[data-pack]').forEach(el => el.addEventListener('input', () => {
+      state.pack[el.dataset.pack] = el.value;
+      refresh();
+    }));
+
+    // sidebar
+    $('#sceneList').addEventListener('click', e => {
+      const li = e.target.closest('[data-si]');
+      if (!li) return;
+      const i = +li.dataset.si;
+      const btn = e.target.closest('[data-sact]');
+      if (!btn) return selectScene(i);
+      ({ up: () => moveScene(i, -1), down: () => moveScene(i, 1), dup: () => dupScene(i), del: () => deleteScene(i) })[btn.dataset.sact]();
+    });
+    $('#btnAddScene').addEventListener('click', addBlankScene);
+
+    // editor: typing
+    const editor = $('#editor');
+    editor.addEventListener('focusin', e => {
+      if (e.target.dataset.field === 'tag') tagBeforeEdit = e.target.value;
+    });
+    editor.addEventListener('input', e => {
+      const el = e.target;
+      const s = state.scenes[state.current];
+      if (el.dataset.field) {
+        const f = el.dataset.field;
+        s[f] = f === 'onOpen' ? lines(el.value) : el.value;
+        if (f === 'tag' || f === 'npcName' || f === 'text') refreshTargetSelects();
+      } else if (el.dataset.bf) {
+        const b = s.buttons[+el.closest('.btn-card').dataset.bi];
+        if (el.dataset.bf === 'commands') b.commands = lines(el.value);
+        else if (el.dataset.bf === 'name') b.name = el.value;
+        else return; // selects handled on change
+        refreshTargetSelects();
+      } else return;
+      refresh();
+    });
+    editor.addEventListener('change', e => {
+      const el = e.target;
+      const s = state.scenes[state.current];
+      if (el.dataset.field === 'tag') {
+        // keep links working when a page is renamed
+        const oldTag = tagBeforeEdit, newTag = el.value;
+        tagBeforeEdit = newTag;
+        if (oldTag && oldTag !== newTag && !state.scenes.some(x => x !== s && x.tag === oldTag)) {
+          let n = 0;
+          state.scenes.forEach(x => x.buttons.forEach(b => {
+            if (b.action === 'goto' && b.target === oldTag) { b.target = newTag; n++; }
+          }));
+          if (n) { refreshTargetSelects(); refresh(); toast(`已同步更新 ${n} 個指向此頁的按鈕`); }
+        }
+        return;
+      }
+      if (!el.dataset.bf) return;
+      const b = s.buttons[+el.closest('.btn-card').dataset.bi];
+      if (el.dataset.bf === 'action') {
+        b.action = el.value;
+        renderAll();
+      } else if (el.dataset.bf === 'target') {
+        b.target = el.value;
+        refreshTargetSelects();
+        refresh();
+      }
+    });
+
+    // editor: buttons
+    editor.addEventListener('click', e => {
+      const btn = e.target.closest('[data-act]');
+      if (!btn) return;
+      const s = state.scenes[state.current];
+      const card = btn.closest('.btn-card');
+      const j = card ? +card.dataset.bi : -1;
+      switch (btn.dataset.act) {
+        case 'add-btn':
+          if (s.buttons.length < MAX_BUTTONS) s.buttons.push(newButton('', 'goto', ''));
+          renderAll();
+          $$('#editor input[data-bf="name"]').pop()?.focus();
+          return;
+        case 'btn-del': s.buttons.splice(j, 1); break;
+        case 'btn-up': if (j > 0) [s.buttons[j - 1], s.buttons[j]] = [s.buttons[j], s.buttons[j - 1]]; break;
+        case 'btn-down': if (j < s.buttons.length - 1) [s.buttons[j + 1], s.buttons[j]] = [s.buttons[j], s.buttons[j + 1]]; break;
+        case 'add-next': return addNextScene();
+      }
+      renderAll();
+    });
+
+    // issues -> jump to scene
+    $('#issues').addEventListener('click', e => {
+      const li = e.target.closest('[data-goto]');
+      if (li) selectScene(+li.dataset.goto);
+    });
+
+    // preview
+    $('#preview').addEventListener('click', e => {
+      const b = e.target.closest('[data-pvb]');
+      if (b) return pressPreviewButton(+b.dataset.pvb);
+      if (e.target.closest('[data-pv="restart"]')) restartPreview();
+    });
+    const restartPreview = () => { previewLog = []; openPreview(0); renderPreview(); };
+    $('#pvRestart').addEventListener('click', restartPreview);
+    $('#pvCurrent').addEventListener('click', () => { openPreview(state.current); renderPreview(); });
+
+    // export
+    $('#btnMcpack').addEventListener('click', exportMcpack);
+    $('#btnDlDialogue').addEventListener('click', () => {
+      if (confirmIssues()) download(jsonBlob(buildDialogue()), `${fileBase()}.json`);
+    });
+    $('#btnDlManifest').addEventListener('click', () => download(jsonBlob(buildManifest()), 'manifest.json'));
+    $('#btnCopy').addEventListener('click', copyJson);
+    $$('.tabs button').forEach(b => b.addEventListener('click', () => { jsonTab = b.dataset.tab; renderJson(); }));
+
+    // top actions
+    $('#btnExample').addEventListener('click', () => {
+      if (!confirm('載入範例會取代目前所有內容，確定嗎？')) return;
+      state = exampleState();
+      previewLog = []; openPreview(0, true);
+      renderAll();
+      toast('已載入「冒險導師」範例');
+    });
+    $('#btnClear').addEventListener('click', () => {
+      if (!confirm('確定要清除全部內容，從空白開始嗎？')) return;
+      state = blankState();
+      previewLog = []; openPreview(0, true);
+      renderAll();
+      toast('已清除，從空白開始');
+    });
+  }
+
+  // ---------- init ----------
+  state = load() || exampleState();
+  openPreview(state.current, true);
+  bind();
+  renderAll();
+})();
+</script>
+</body>
+</html>
